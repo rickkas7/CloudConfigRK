@@ -5,15 +5,8 @@ CloudConfig *CloudConfig::_instance;
 //
 // CloudConfigStorageData
 // 
-CloudConfigStorageData::CloudConfigStorageData() {
-
-}
 
 CloudConfigStorageData::CloudConfigStorageData(CloudConfigDataHeader *header, size_t dataSize) : header(header), dataSize(dataSize) {
-
-}
-
-CloudConfigStorageData::~CloudConfigStorageData() {
 
 }
 
@@ -285,9 +278,9 @@ void CloudConfigUpdateSubscription::subscriptionHandler(const char *eventName, c
 }
 
 //
-// CloudConfigUpdateDeviceNotes
+// CloudConfigUpdateWebhook
 //
-CloudConfigUpdateDeviceNotes::CloudConfigUpdateDeviceNotes(const char *eventName) {
+CloudConfigUpdateWebhook::CloudConfigUpdateWebhook(const char *eventName) {
     // This is the request event name
     requestEventName = eventName;
 
@@ -295,7 +288,7 @@ CloudConfigUpdateDeviceNotes::CloudConfigUpdateDeviceNotes(const char *eventName
     withEventName(eventName);
 }
 
-CloudConfigUpdateDeviceNotes &CloudConfigUpdateDeviceNotes::withEventName(const char *eventName) {
+CloudConfigUpdateWebhook &CloudConfigUpdateWebhook::withEventName(const char *eventName) {
     // Response Template:
     // {{PARTICLE_DEVICE_ID}}/hook-response/{{PARTICLE_EVENT_NAME}}
     String s = String::format("%s/hook-response/%s/", System.deviceID().c_str(), eventName);
@@ -304,8 +297,8 @@ CloudConfigUpdateDeviceNotes &CloudConfigUpdateDeviceNotes::withEventName(const 
     return *this;
 }
 
-void CloudConfigUpdateDeviceNotes::startUpdate() {
-    Log.info("CloudConfigUpdateDeviceNotes::startUpdate %s", requestEventName.c_str());
+void CloudConfigUpdateWebhook::startUpdate() {
+    Log.info("CloudConfigUpdateWebhook::startUpdate %s", requestEventName.c_str());
 
     Particle.publish(requestEventName, "");
 }

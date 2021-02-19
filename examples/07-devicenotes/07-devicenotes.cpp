@@ -24,7 +24,7 @@ void setup() {
             logJson();
         })
         .withUpdateFrequency(5min)
-        .withUpdateMethod(new CloudConfigUpdateDeviceNotes("CloudConfigDeviceNotes"))
+        .withUpdateMethod(new CloudConfigUpdateWebhook("CloudConfigDeviceNotes"))
         .withStorageMethod(new CloudConfigStorageRetained(&retainedConfig, sizeof(retainedConfig)))
         .setup();
 }

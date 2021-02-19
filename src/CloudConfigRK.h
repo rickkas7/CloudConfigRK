@@ -3,7 +3,12 @@
 
 #include "Particle.h"
 
-struct CloudConfigDataHeader {
+/**
+ * @brief Header for structure containing saved data used for retained memory, files, and EEPROM.
+ * 
+ * It's currently 20 bytes plus the size of the JSON configuration data that goes after it.
+ */
+struct CloudConfigDataHeader { // 20 bytes
     /**
      * @brief Magic bytes, CloudConfig::DATA_MAGIC
      * 
@@ -52,10 +57,19 @@ struct CloudConfigDataHeader {
 /**
  * @brief Structure containing both the data and a compile-time set number of bytes of space to 
  * reserve for configuration JSON data
+ * 
+ * @param SIZE the size of the data in bytes. The total structure will be sizeof(CloudConfigDataHeader) + SIZE
  */
 template<size_t SIZE>
 struct CloudConfigData {
+    /**
+     * @brief The data header (20 bytes) including magic bytes and version information
+     */
     CloudConfigDataHeader header;
+
+    /**
+     * @brief The JSON data goes here. The maximum length is SIZE - 1 characters, as it is always null terminated.
+     */
     char jsonData[SIZE];
 };
 
@@ -68,43 +82,153 @@ struct CloudConfigData {
  */
 class CloudConfigStorage {
 public:
+    /**
+     * @brief Constructor. Base class constructor is empty.
+     */
     CloudConfigStorage() {};
-    virtual ~CloudConfigStorage() {};
 
+    /**
+     * @brief Returns true if there is JSON data field is not empty
+     */
     bool hasJsonData() const { return getJsonData()[0] != 0; };
 
+    /**
+     * @brief Gets a pointer to the data header
+     * 
+     * This is only available in classes derived from CloudConfigStorageData, which is all
+     * of them except CloudConfigDataStatic, which is not updateable and therefore does not
+     * need the structure.
+     */
     virtual CloudConfigDataHeader *getDataHeader() { return 0; };
+
+    /**
+     * @brief Gets a const pointer to the JSON data
+     * 
+     * The CloudConfigStorageData class has an overload that can get a mutable pointer
+     * so the data can be updated, but this base class does not have one, because the 
+     * CloudConfigDataStatic can't update the data in program flash from the device.
+     */
     virtual const char * const getJsonData() const = 0;
 
+    /**
+     * @brief Called from setup(). Optional. Only needed if the storage method wants setup processing time.
+     */
     virtual void setup() = 0;
+
+    /**
+     * @brief Called after the JSON data is updated to parse the data using the JSON parser
+     * 
+     * You normally don't need to override this, but it is virtual in case you do.
+     */
     virtual void parse() { jsonObj = JSONValue::parseCopy(getJsonData()); };
+
+    /**
+     * @brief Called from loop(). Optional. Only needed if the storage method wants loop processing time.
+     */
     virtual void loop() {};
 
+    /**
+     * @brief Gets the top level (outer) JSONValue object. 
+     */
     JSONValue getJSONValue() { return jsonObj; };
 
+    /**
+     * @brief Gets the value for a given key in the top-level outer JSON object
+     * 
+     * @param key The name of the key-value pair
+     * 
+     * @return A JSONValue object for that key. If the key does not exist in that object, an
+     * empty JSONValue object that returns false for isValid() is returned.
+     */
     JSONValue getJSONValueForKey(const char *key) { return getJSONValueForKey(jsonObj, key); }; 
 
+    /**
+     * @brief Gets the value for a given key in the a JSON object 
+     * 
+     * @param parentObj A JSONValue for a JSON object to look in
+     * 
+     * @param key The name of the key-value pair
+     * 
+     * @return A JSONValue object for that key. If the key does not exist in that object, an
+     * empty JSONValue object that returns false for isValid() is returned.
+     */
     static JSONValue getJSONValueForKey(JSONValue parentObj, const char *key); 
 
+    /**
+     * @brief Gets the value for a given index in the a JSON array in the top-level outer JSON array
+     * 
+     * @param index 0 = first entry, 1 = second entry, ...
+     * 
+     * @return A JSONValue object for that key. If the key does not exist in that object, an
+     * empty JSONValue object that returns false for isValid() is returned.
+     * 
+     * This method is not commonly used because the top-level object is usually a JSON object
+     * (surrounded by { }) not a JSON array (surrounded by [ ]).
+     * 
+     * There is no call to determine the length of the array; iterate until an invalid object
+     * is returned.
+     */
     JSONValue getJSONValueAtIndex(size_t index) { return getJSONValueAtIndex(jsonObj, index); }; 
 
+    /**
+     * @brief Gets the value for a given index in the a JSON array
+     * 
+     * @param parentObj A JSONValue for a JSON object to look in
+     * 
+     * @param index 0 = first entry, 1 = second entry, ...
+     * 
+     * @return A JSONValue object for that key. If the key does not exist in that object, an
+     * empty JSONValue object that returns false for isValid() is returned.
+     * 
+     * There is no call to determine the length of the array; iterate until an invalid object
+     * is returned.
+     */
     static JSONValue getJSONValueAtIndex(JSONValue parentObj, size_t index); 
 
+    /**
+     * @brief This method is called to update the data in storage method and parse it again
+     * 
+     * @param json The new JSON data to save
+     * 
+     * This is subclassed in CloudConfigStorageData.
+     */
     virtual bool updateData(const char *json) { return false; };
 
 protected:
+    /**
+     * @brief Destructor. Base class destructor is empty. Also, you can't delete one of these.
+     */
+    virtual ~CloudConfigStorage() {};
+
+    /**
+     * @brief This class is not copyable
+     */
+    CloudConfigStorage(const CloudConfigStorage&) = delete;
+
+    /**
+     * @brief This class is not copyable
+     */
+    CloudConfigStorage& operator=(const CloudConfigStorage&) = delete;
+
+    /**
+     * @brief The JSONValue object for the outermost JSON object (or array)
+     * 
+     * The parse() method sets this. The parse() method is called from setup() and updateData().
+     */
     JSONValue jsonObj;
 };
 
 /**
  * @brief Abstract base class of all storage methods that use a CloudConfigData structure
+ * 
+ * Classes that include a CloudConfigDataHeader (Retained, EEPROM, File) all use this class as
+ * a base class as it contains handy common features that simplify those implementations.
  */
 class CloudConfigStorageData : public CloudConfigStorage {
 public:
-    CloudConfigStorageData();
+    CloudConfigStorageData() {};
 
     CloudConfigStorageData(CloudConfigDataHeader *header, size_t dataSize);
-    virtual ~CloudConfigStorageData();
 
     CloudConfigStorageData &withData(CloudConfigDataHeader *header, size_t dataSize);
 
@@ -118,6 +242,11 @@ public:
 
     virtual bool updateData(const char *json);
 
+    /**
+     * @brief Save the data in the storage subclass
+     * 
+     * @return true on success or false on failure. 
+     */
     virtual bool save() = 0;
 
 protected:
@@ -132,7 +261,6 @@ protected:
 class CloudConfigUpdate {
 public:
     CloudConfigUpdate() {};
-    virtual ~CloudConfigUpdate() {};
 
     virtual void setup() {};
     virtual void loop() {};
@@ -141,13 +269,28 @@ public:
 
     unsigned long waitAfterCloudConnectedMs = 2000;
     unsigned long updateTimeoutMs = 60000;
+
+protected:
+    /**
+     * @brief Destructor. Base class destructor is empty. Also, you can't delete one of these.
+     */
+    virtual ~CloudConfigUpdate() {};
+
+    /**
+     * @brief This class is not copyable
+     */
+    CloudConfigUpdate(const CloudConfigUpdate&) = delete;
+
+    /**
+     * @brief This class is not copyable
+     */
+    CloudConfigUpdate& operator=(const CloudConfigUpdate&) = delete;
+
 };
 
 /**
- * @brief Generic base class used by all storage methods
+ * @brief Singleton class for managing cloud-based configuration
  * 
- * You can't instantiate one of these, you need to instantiate a specific subclass such as 
- * CloudConfigEEPROM, CloudConfigRetained, or CloudConfigNoStorage.
  */
 class CloudConfig {
 public:
@@ -204,7 +347,8 @@ public:
     void loop();
 
     //
-    // Wrappers to access storage values
+    // Convenience wrappers to access storage values
+    // 
 
     JSONValue getJSONValue() { return storageMethod->getJSONValue(); };
 
@@ -279,7 +423,6 @@ protected:
 class CloudConfigStorageStatic : public CloudConfigStorage {
 public:
     CloudConfigStorageStatic(const char * const jsonData) : jsonData(jsonData) {};
-    virtual ~CloudConfigStorageStatic() {};
 
     virtual void setup() { parse(); };
 
@@ -289,15 +432,28 @@ protected:
     const char * const jsonData;
 };
 
-
+/**
+ * @brief Storage method to store data in retained memory
+ * 
+ * Retained memory is preserved across restarts and across all sleep modes including HIBERNATE mode. There is around 3K of retained memory available.
+ */
 class CloudConfigStorageRetained : public CloudConfigStorageData {
 public:
+    /**
+     * @brief Construct a storage method for retained RAM. 
+     * 
+     * @param retainedData A pointer to the retained buffer, typically a CloudConfigData<> struct.
+     * 
+     * @param totalSize The size of the retained data including both the header and data. It's that way so you can use sizeof() easily.
+     * 
+     * You typically allocate one of these as a global variable or using new from setup(). 
+     * 
+     * You cannot delete or copy one of these objects.
+     */
     CloudConfigStorageRetained(void *retainedData, size_t totalSize) : CloudConfigStorageData((CloudConfigDataHeader *)retainedData, totalSize - sizeof(CloudConfigDataHeader)) {};
-    virtual ~CloudConfigStorageRetained() {};
-
-    virtual void setup() { parse(); };
+    
+    virtual void setup() { validate(); };
     virtual bool save() { return true; };
-
 };
 
 
@@ -306,9 +462,8 @@ template<size_t SIZE>
 class CloudConfigStorageEEPROM : public CloudConfigStorageData {
 public:
     CloudConfigStorageEEPROM(size_t eepromOffset) : CloudConfigStorageData(&dataBuffer.header, SIZE) {};
-    virtual ~CloudConfigStorageEEPROM() {};
 
-    virtual void setup() { EEPROM.get(eepromOffset, dataBuffer); parse(); };
+    virtual void setup() { EEPROM.get(eepromOffset, dataBuffer); validate(); };
     virtual bool save() { EEPROM.put(eepromOffset, dataBuffer); return true; };
 
 protected:
@@ -324,7 +479,6 @@ template<size_t SIZE>
 class CloudConfigStorageFile : public CloudConfigStorageData {
 public:
     CloudConfigStorageFile(const char *path) : path(path), CloudConfigStorageData(&dataBuffer.header, SIZE) {};
-    virtual ~CloudConfigStorageFile() {};
 
     virtual void setup() {
         int fd = open(path, O_RDWR | O_CREAT);
@@ -339,7 +493,6 @@ public:
             close(fd);   
         }
         validate();
-        parse();
     }
 
     virtual bool save() {
@@ -373,7 +526,6 @@ protected:
 class CloudConfigUpdateFunction : public CloudConfigUpdate {
 public:
     CloudConfigUpdateFunction() {};
-    virtual ~CloudConfigUpdateFunction() {};
 
     CloudConfigUpdateFunction(const char *name) : name(name) {};
 
@@ -398,7 +550,6 @@ protected:
 class CloudConfigUpdateSubscription : public CloudConfigUpdate {
 public:
     CloudConfigUpdateSubscription() {};
-    virtual ~CloudConfigUpdateSubscription() {};
 
     CloudConfigUpdateSubscription(const char *eventName) : eventName(eventName) {};
 
@@ -413,44 +564,17 @@ protected:
 };
 
 /**
- * @brief Update configuration via a webhook
+ * @brief Update configuration from data retrieved from a webhook
  * 
- * This is based on the subscription model, except the device requests
- * the configuration using a webhook. You program the settings into
- * the webhook response configuration from the console, so no separate 
- * server is required.
- * 
- * - Good if you have commmon configuration across all devices
- * - Can configure settings in the console (though you have to edit JSON
- * in the webhook editor).
- * - Devices must be claimed to an account.
+ * Two examples that use this are the Devices Notes example and Google Sheets example
  */
-/*
 class CloudConfigUpdateWebhook : public CloudConfigUpdateSubscription {
 public:
-    CloudConfigUpdateWebhook();
-    virtual ~CloudConfigUpdateWebhook();
-};
-*/
+    CloudConfigUpdateWebhook() {};
+    
+    CloudConfigUpdateWebhook(const char *eventName);
 
-/**
- * @brief Update configuration stored in the Device Notes field 
- * 
- * This is a special case of the webhook that reads the configuration data
- * from the Device Notes field of device information.
- * 
- * - Good if you have per-device configuration.
- * - Can configure settings in the console (though you have to edit JSON).
- * - Devices must be claimed to an account.
- */
-class CloudConfigUpdateDeviceNotes : public CloudConfigUpdateSubscription {
-public:
-    CloudConfigUpdateDeviceNotes() {};
-    virtual ~CloudConfigUpdateDeviceNotes() {};
-
-    CloudConfigUpdateDeviceNotes(const char *eventName);
-
-    CloudConfigUpdateDeviceNotes &withEventName(const char *eventName);
+    CloudConfigUpdateWebhook &withEventName(const char *eventName);
 
     virtual void startUpdate();
 
