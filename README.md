@@ -2,8 +2,10 @@
 
 Store configuration settings locally with the ability to set from the cloud
 
-Github repository: https://github.com/rickkas7/CloudConfigRK
-License: MIT
+- Github repository: https://github.com/rickkas7/CloudConfigRK
+- License: MIT
+
+The [full browsable API docs](https://rickkas7.github.io/CloudConfigRK/index.html) are available online as well as in HTML in the docs folder.
 
 ## Storage Methods
 
