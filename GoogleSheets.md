@@ -2,6 +2,8 @@
 
 This is a great option for storing per-device configuration for a set of devices in a Google Sheets spreadsheet. It makes adding and updating configuration easy, and you can see the values for your fleet at a glance. It also makes it easy to replicate settings across a group of devices easily.
 
+It uses Apps Script, which is included in your G Suite subscription, so you don't need to purchase separate Google Cloud computing resources!
+
 For more information, see [AN011 - Publish to Google Sheets](https://github.com/particle-iot/app-notes/tree/master/AN011-Publish-to-Google-Sheets) as this note is based on that, but for getting configuration instead of saving data.
 
 If you're like to learn more about Google Apps Script, these two resources are a good starting point:
@@ -10,7 +12,7 @@ If you're like to learn more about Google Apps Script, these two resources are a
 - [Codelab Tutorial](https://codelabs.developers.google.com/codelabs/apps-script-fundamentals-1/index.html)
 
 
-## Google Configuration
+## Device Configuration
 
 ### Create the spreadsheet
 
@@ -195,7 +197,8 @@ For more information about deploying webapps, see the [Google apps script page](
 
 Also note that you cannot use the Test Deployment URL in a webhook. That requires authorization to use it, so it won't work from a webhook.
 
-### Create the webhook
+
+### Create the Particle webhook
 
 The next step is to create the webhook. 
 
@@ -211,7 +214,7 @@ The next step is to create the webhook.
 
 - Set the **URL** field to the URL of the webapp you just deployed. Remember to keep this a secret!
 
-- Set the **Request Type** to **Get**. 
+- Set the **Request Type** to **GET**. 
 
 - Set the **Request Format** to **Query Parameters**.
 
@@ -308,3 +311,187 @@ Also, if you changed your event name in the webhook, be sure to update:
 ```cpp
         .withUpdateMethod(new CloudConfigUpdateWebhook("ConfigSpreadsheet"))
 ```
+
+---
+
+## Update Button
+
+This example adds a button to update the selected device's configuration! 
+
+![](images/update-button.png)
+
+This example builds off the setup from the previous tutorial so if you have not completed the previous steps you should do that first.
+
+This is a really neat technique, however it's probably best suited for home or developer use. It requires a Particle access token to be embedded in the Google apps script, so anyone who has the ability to open the script code would be able to obtain your access token.
+
+- Open the Google Sheets spreadsheet **Device Configuration** from the previous example.
+
+- From the **Insert** menu select **Drawing**. Using the **Shape** tool, draw a **Rounded Rectangle** and add text to make something that looks like a button.
+
+![](images/button-drawing.png)
+
+- Save the drawing and move the button to a convenient location in your spreadsheet.
+
+- From the **Tools** menu select **Script Editor** if not already opened, and edit the script to be:
+
+```js
+/**
+ * @OnlyCurrentDoc
+ */
+function test() {
+  var e = {};
+  e.parameter = {};
+  e.parameter.coreid = '1f00ffffffffffffffffffff';
+  doGet(e);
+}
+
+function doGet(e) {
+  // e.parameter.coreid
+    
+  var sheet = SpreadsheetApp.getActiveSheet();
+  
+  var range = sheet.getDataRange();
+  var values = range.getValues();
+
+  var result = {};
+  
+  for(var row = 0; row < values.length; row++) {
+    if (values[row][0] == e.parameter.coreid) {
+      // Found the row
+      for(var col = 1; col < values[0].length; col++) {
+        result[values[0][col]] = values[row][col];
+      }
+      break;
+    }
+  }
+
+  console.log('result', result);
+
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function updateSelected() {
+  var sheet = SpreadsheetApp.getActiveSheet();
+
+  var dataRange = sheet.getDataRange();
+  var values = dataRange.getValues();
+
+  var activeRange = sheet.getActiveRange();
+  if (activeRange != null && activeRange.getNumRows() >= 1) {
+    for(var row = activeRange.getRow() - 1; row < activeRange.getRow() + activeRange.getNumRows() - 1; row++) {
+      if (row >= values.length) {
+        break;
+      }
+      var deviceId = values[row][0];
+      if (deviceId.length != 24) {
+        continue;
+      }
+
+      var result = {};
+      for(var col = 1; col < values[0].length; col++) {
+        result[values[0][col]] = values[row][col];
+      }
+      console.log('row=' + row + ' deviceId=' + deviceId, result);
+
+      // Update ConfigSpreadsheet to be the event name you are using if you changed it!
+      // Make sure you leave the /0 at the end.
+      var eventName = deviceId + '/hook-response/ConfigSpreadsheet/0';
+      publishEvent(eventName, JSON.stringify(result));
+    }
+  }
+}
+
+function publishEvent(eventName, eventData) {
+  if (!eventName) {
+    eventName = 'testEvent';
+  }
+  if (!eventData) {
+    eventData = 'testData';
+  }
+  var formData = {
+    'name': eventName,
+    'data': eventData,
+    'access_token': 'xxxx'
+  };
+  var options = {
+    'method' : 'post',
+    'payload' : formData
+  };
+  UrlFetchApp.fetch('https://api.particle.io/v1/devices/events', options);
+}
+
+```
+
+This script starts out the same as the previous script, then adds two new functions: updateSelected and publishEvent.
+
+You will need an access token for your account. You will probably want to use the [Particle CLI](https://docs.particle.io/reference/developer-tools/cli/#particle-token-create) since you will probably want a token that does not expire. Keep this secure since it allows complete access to your account!
+
+```
+particle token create --never-expires
+```
+
+![](images/test-publish.png)
+
+- Paste your access token in place of the 'xxxx' in the publishEvent function (1).
+
+- Select **publishEvent** (2) as the function to test.
+
+- Open the [Particle console](https://console.particle.io) Events tab if you don't already have it open.
+
+- Click **Run** (3) to run the test.
+
+- The first time you run this script, you will be prompted to authorize access to connect to an external service. This is normal, and required.
+
+![](images/external-auth.png)
+
+- You should see **testEvent** in the Particle console event log.
+
+![](images/test-event.png)
+
+- If you changed the event name from **ConfigSpreadsheet** edit this line in the updateSelected function:
+
+```
+var eventName = deviceId + '/hook-response/ConfigSpreadsheet/0';
+```
+
+- Select a cell for a device in the spreadsheet (A2, for example).
+
+![](images/run-updateselected.png)
+
+- Select **updateSelected** (1) as the function to test.
+
+- Click **Run** (2) to run the test.
+
+- There should be a result in the execution log (3).
+
+![](images/update-event.png)
+
+- And also in the Particle console event log!
+
+- Click **Deploy** and do a **New deployment** of this script. The name isn't important, but you may want to name it something like "Add update selected" so you can remember what you changed in this deployment.
+
+- Back in the spreadsheet, right click on the **Update selected** button and click the three dots icon.
+
+![](images/assign-script.png)
+
+- Select **Assign script**.
+
+![](images/assign-script-2.png)
+
+- In the Assign script dialog, enter **updateSelected**. Note that it's case-sensitive and must match the name of the function exactly.
+
+- Click the **Update Selected** button and then check the Particle event log.
+
+- If you have the Particle serial monitor open on your device, you should see something like:
+
+```
+0002815925 [app] INFO: updateData called {"name":"test2","a":1234,"b":"test string 1"}
+0002815926 [app] INFO: dataCallback
+0002815926 [app] INFO: configuration:
+0002815926 [app] INFO:   key=name value=test2
+0002815926 [app] INFO:   key=a value=1234
+0002815926 [app] INFO:   key=b value=test string 1
+```
+
+
