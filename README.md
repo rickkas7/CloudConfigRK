@@ -306,3 +306,8 @@ This storage method doesn't use the cloud at all and instead has the configurati
 
 This is mainly so you can use the same code base for cloud or local storage, swappable at compile time. It's a bit of overkill for normal use.
  
+## Version History
+
+### 0.0.2 (2021-02-21)
+
+- Fixed a bug where EEPROM wasn't saved correct (eepromOffset not stored)

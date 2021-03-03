@@ -915,7 +915,7 @@ public:
      * The getTotalSize() method of the parent class determines how many bytes of EEPROM are used; it's
      * the size of the CloudConfigDataHeader plus SIZE.
      */
-    CloudConfigStorageEEPROM(size_t eepromOffset) : CloudConfigStorageData(&dataBuffer.header, SIZE) {};
+    CloudConfigStorageEEPROM(size_t eepromOffset) : CloudConfigStorageData(&dataBuffer.header, SIZE), eepromOffset(eepromOffset) {};
 
     /**
      * @brief Called during setup() to load, validate, and parse the JSON data
